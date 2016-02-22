@@ -56,7 +56,10 @@ namespace MessageAnalyzerToolkit.Executables
                 }
                 else
                 {
-                    list = list.Union(Directory.EnumerateFiles(this.ManifestDirectory, "*.etwManifest.man"));
+                    if (this.ManifestDirectory != null)
+                    {
+                        list = list.Union(Directory.EnumerateFiles(this.ManifestDirectory, "*.etwManifest.man"));
+                    }
                 }
 
                 foreach (var file in list)
@@ -117,8 +120,75 @@ namespace MessageAnalyzerToolkit.Executables
             WriteProtocolHeader(sb, providerElement);
             WriteNamespaces(sb);
             WriteKeywords(sb, providerElement);
+            WriteValueMaps(sb, providerElement, localizationElement);
             WriteEvents(sb, providerElement, localizationElement);
             return sb.ToString();
+        }
+
+        private void WriteValueMaps(StringBuilder sb, XElement provider, XElement localizationElement)
+        {
+            foreach (var etwMap in provider.Element(GetXName("maps")).Elements(GetXName("valueMap")))
+            {
+                CreateMapPattern(sb, etwMap);
+                CreateMapToText(sb, etwMap, localizationElement);
+            }
+        }
+
+        private void CreateMapToText(StringBuilder sb, XElement etwMap, XElement localizationElement)
+        {
+            sb.AppendFormat("string {0}_ToText(any e)", etwMap.Attribute("name").Value);
+            sb.AppendLine();
+            sb.AppendLine("{");
+            sb.AppendFormat("\t{0} ev = e as {0};", etwMap.Attribute("name").Value);
+            sb.AppendLine();
+            sb.AppendLine("\tswitch (ev)");
+            sb.AppendLine("\t{");
+            foreach (var map in etwMap.Elements(GetXName("map")))
+            {
+                string mapValue = map.Attribute("value").Value;
+                int value;
+                if (mapValue.ToLower().Contains("x"))
+                {
+                    value = Convert.ToInt32(mapValue, 16);
+                }
+                else
+                {
+                    value = Convert.ToInt32(mapValue);
+                }
+                string message = map.Attribute("message")?.Value;
+                message = message.Replace("$(string.", "").Replace(")", "");
+                sb.AppendFormat("\t\tcase $ {0} => return \"{1}\";", value, FindLocalization(message, localizationElement));
+                sb.AppendLine();
+            }
+            sb.AppendLine("\t\tdefault => return \"Unknown\";");
+            sb.AppendLine("\t}");
+            sb.AppendLine("};");
+            sb.AppendLine();
+        }
+
+        private void CreateMapPattern(StringBuilder sb, XElement etwMap)
+        {
+            sb.AppendFormat("pattern {0} = enum uint", etwMap.Attribute("name").Value);
+            sb.AppendLine();
+            sb.AppendLine("\t\t{");
+            foreach (var map in etwMap.Elements(GetXName("map")))
+            {
+                string mapValue = map.Attribute("value").Value;
+                int value;
+                if (mapValue.ToLower().Contains("x"))
+                {
+                    value = Convert.ToInt32(mapValue, 16);
+                }
+                else
+                {
+                    value = Convert.ToInt32(mapValue);
+                }
+                sb.AppendFormat("\t\t\tValue{0} = {0}", value);
+                sb.AppendLine();
+            }
+            sb.AppendLine("\t\t\t...");
+            sb.AppendLine("\t\t};");
+            sb.AppendLine();
         }
 
         private void WriteProtocolHeader(StringBuilder sb, XElement provider)
@@ -198,7 +268,7 @@ namespace MessageAnalyzerToolkit.Executables
         private void WriteEvents(StringBuilder sb, XElement provider, XElement localization)
         {
             Dictionary<Tuple<int, int, string>, XElement> events = new Dictionary<Tuple<int, int, string>, XElement>();
-            Dictionary<string, List<Tuple<string, string>>> templateData = new Dictionary<string, List<Tuple<string, string>>>();
+            Dictionary<string, List<Tuple<string, string, string>>> templateData = new Dictionary<string, List<Tuple<string, string, string>>>();
             foreach (var etwEvent in provider.Element(GetXName("events")).Elements(GetXName("event")))
             {
                 events.Add(new Tuple<int, int, string>(int.Parse(etwEvent.Attribute("value").Value), int.Parse(etwEvent.Attribute("version").Value), etwEvent.Attribute("symbol").Value), etwEvent);
@@ -206,16 +276,16 @@ namespace MessageAnalyzerToolkit.Executables
 
             foreach (var template in provider.Element(GetXName("templates")).Elements(GetXName("template")))
             {
-                List<Tuple<string, string>> datas = new List<Tuple<string, string>>();
+                List<Tuple<string, string, string>> datas = new List<Tuple<string, string, string>>();
                 templateData.Add(template.Attribute("tid").Value, datas);
                 foreach (var data in template.Elements(GetXName("data")))
                 {
-                    datas.Add(new Tuple<string, string>(ConvertETWType(data.Attribute("inType").Value), ConvertToPascalCase(data.Attribute("name").Value)));
+                    datas.Add(new Tuple<string, string, string>(ConvertETWType(data.Attribute("inType").Value), ConvertToPascalCase(data.Attribute("name").Value), data.Attribute("map")?.Value));
                 }
             }
 
             //WriteEvent Messages
-            WriteEvents(sb, localization, events, templateData);
+            WriteEvents(sb, provider, localization, events, templateData);
 
             //Write Template Messages
             WriteTemplates(sb);
@@ -287,12 +357,12 @@ namespace MessageAnalyzerToolkit.Executables
             return eventName;
         }
 
-        private void WriteEvents(StringBuilder sb, XElement localization, Dictionary<Tuple<int, int, string>, XElement> events, Dictionary<string, List<Tuple<string, string>>> templateData)
+        private void WriteEvents(StringBuilder sb, XElement provider, XElement localization, Dictionary<Tuple<int, int, string>, XElement> events, Dictionary<string, List<Tuple<string, string, string>>> templateData)
         {
             foreach (var etwEvent in events)
             {
                 string template = "EventTemplate";
-                List<Tuple<string, string>> templateDatas = null;
+                List<Tuple<string, string, string>> templateDatas = null;
                 XAttribute templateAttr = etwEvent.Value.Attribute("template");
                 if (templateAttr != null && !templateData.TryGetValue(templateAttr.Value, out templateDatas))
                 {
@@ -307,7 +377,14 @@ namespace MessageAnalyzerToolkit.Executables
                 {
                     foreach (var data in templateDatas)
                     {
-                        sb.AppendFormat("\t{0} {1};", data.Item1, data.Item2);
+                        if (!String.IsNullOrWhiteSpace(data.Item3))
+                        {
+                            sb.AppendFormat("\t{0} {1} with DisplayInfo{{ToText = {0}_ToText}};", data.Item3, data.Item2);
+                        }
+                        else
+                        {
+                            sb.AppendFormat("\t{0} {1};", data.Item1, data.Item2);
+                        }
                         sb.AppendLine();
                         sb.AppendLine("");
                     }
@@ -334,7 +411,14 @@ namespace MessageAnalyzerToolkit.Executables
                     {
                         int paramNr = int.Parse(param.Groups["param"].Value);
                         var dataItem = templateDatas[paramNr - 1];
-                        summary = summary.Replace(param.Value, string.Format("\" + \n\t\t\t\t(this.{0} as string) + \"", dataItem.Item2));
+                        if (!string.IsNullOrWhiteSpace(dataItem.Item3))
+                        {
+                            summary = summary.Replace(param.Value, string.Format("\" + \n\t\t\t\tEnumToString(this.{0},\"{1}.{2}\") + \"", dataItem.Item2, provider.Attribute("name").Value.Replace('-', '_'), dataItem.Item3));
+                        }
+                        else
+                        {
+                            summary = summary.Replace(param.Value, string.Format("\" + \n\t\t\t\t(this.{0} as string) + \"", dataItem.Item2));
+                        }
                     }
                     summary = summary.Replace("\"\" +", "").Replace("+ \"\"", "").Trim();
                     sb.AppendLine("\t\treturn " + summary + ";");

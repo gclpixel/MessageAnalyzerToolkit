@@ -51,7 +51,10 @@ namespace MessageAnalyzerToolkit.Executables
                 }
                 else
                 {
-                    list = list.Union(Directory.EnumerateFiles(this.ManifestDirectory, "*.etwManifest.man"));
+                    if (this.ManifestDirectory != null)
+                    {
+                        list = list.Union(Directory.EnumerateFiles(this.ManifestDirectory, "*.etwManifest.man"));
+                    }
                 }
 
                 foreach (var file in list)

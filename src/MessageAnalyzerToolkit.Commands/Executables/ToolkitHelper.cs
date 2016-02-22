@@ -14,6 +14,11 @@ namespace MessageAnalyzerToolkit.Executables
                 File.Delete(opnFileName);
             }
 
+            foreach (var opnFileName in Directory.EnumerateFiles(Path.Combine(analyzerPath, @"OPNAndConfiguration\OPNs\Facton\"), analyzerProviderName + "*.opn", SearchOption.TopDirectoryOnly))
+            {
+                File.Delete(opnFileName);
+            }
+
             foreach (var cacheFileName in Directory.EnumerateFiles(Path.Combine(analyzerPath, "CodecCache"), analyzerProviderName + "*.*", SearchOption.TopDirectoryOnly))
             {
                 File.Delete(cacheFileName);
