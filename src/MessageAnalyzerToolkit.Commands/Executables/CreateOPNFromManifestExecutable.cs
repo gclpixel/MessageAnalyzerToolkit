@@ -187,7 +187,7 @@ namespace MessageAnalyzerToolkit.Executables
                 {
                     value = Convert.ToInt32(mapValue);
                 }
-                sb.AppendFormat("\t\t\tValue{0} = {0}", value);
+                sb.AppendFormat("\t\t\tValue{0} = {0},", value);
                 sb.AppendLine();
             }
             sb.AppendLine("\t\t\t...");
