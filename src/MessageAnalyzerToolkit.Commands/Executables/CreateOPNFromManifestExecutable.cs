@@ -127,10 +127,14 @@ namespace MessageAnalyzerToolkit.Executables
 
         private void WriteValueMaps(StringBuilder sb, XElement provider, XElement localizationElement)
         {
-            foreach (var etwMap in provider.Element(GetXName("maps")).Elements(GetXName("valueMap")))
+            var maps = provider.Element(GetXName("maps"));
+            if (maps != null)
             {
-                CreateMapPattern(sb, etwMap);
-                CreateMapToText(sb, etwMap, localizationElement);
+                foreach (var etwMap in maps.Elements(GetXName("valueMap")))
+                {
+                    CreateMapPattern(sb, etwMap);
+                    CreateMapToText(sb, etwMap, localizationElement);
+                }
             }
         }
 
