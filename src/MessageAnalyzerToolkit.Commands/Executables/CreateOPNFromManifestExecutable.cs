@@ -93,6 +93,10 @@ namespace MessageAnalyzerToolkit.Executables
 					string opnContent = CreateOPNFile(document);
 
 					ToolkitHelper.ReplaceETWProvider(analyzerPath, providerName, opnContent);
+
+					string opnOPContent = CreateOPN_ScenarioFile(document);
+
+					ToolkitHelper.ReplaceETWProvider(analyzerPath, providerName + "_OP", opnOPContent);
 				}
 			}
 			catch (Exception e)
@@ -122,6 +126,21 @@ namespace MessageAnalyzerToolkit.Executables
 			WriteKeywords(sb, providerElement);
 			WriteValueMaps(sb, providerElement, localizationElement);
 			WriteEvents(sb, providerElement, localizationElement);
+			return sb.ToString();
+		}
+
+		private string CreateOPN_ScenarioFile(XDocument manifest)
+		{
+			StringBuilder sb = new StringBuilder();
+			XmlNamespaceManager nsMgr = new XmlNamespaceManager(new NameTable());
+			nsMgr.AddNamespace("etw", "http://schemas.microsoft.com/win/2004/08/events");
+
+			XElement providerElement = manifest.XPathSelectElement("/etw:instrumentationManifest/etw:instrumentation/etw:events/etw:provider", nsMgr);
+			XElement localizationElement = manifest.XPathSelectElement("/etw:instrumentationManifest/etw:localization", nsMgr);
+			WriteScenarioProtocolHeader(sb, providerElement);
+			WriteScenarioNamespaces(sb, providerElement);
+
+			WriteScenarios(sb, providerElement, localizationElement);
 			return sb.ToString();
 		}
 
@@ -207,12 +226,34 @@ namespace MessageAnalyzerToolkit.Executables
 			sb.AppendLine();
 		}
 
+		private void WriteScenarioProtocolHeader(StringBuilder sb, XElement provider)
+		{
+			sb.AppendFormat("protocol {0}_OP;", provider.Attribute("name").Value.Replace('-', '_'));
+			sb.AppendLine();
+			sb.AppendLine();
+		}
+
 		private void WriteNamespaces(StringBuilder sb)
 		{
 			sb.AppendLine("using Etw;");
 			sb.AppendLine("using EtwEvent;");
 			sb.AppendLine("using WindowsReference;");
 			sb.AppendLine("using Utility;");
+			sb.AppendLine("using Standard;");
+			sb.AppendLine("using Diagnostics;");
+			sb.AppendLine();
+		}
+
+		private void WriteScenarioNamespaces(StringBuilder sb, XElement provider)
+		{
+			sb.AppendLine("using Etw;");
+			sb.AppendLine("using EtwEvent;");
+			sb.AppendLine("using WindowsReference;");
+			sb.AppendLine("using Utility;");
+			sb.AppendLine("using Standard;");
+			sb.AppendLine("using Diagnostics;");
+			sb.AppendFormat("using {0};", provider.Attribute("name").Value.Replace('-', '_'));
+			sb.AppendLine();
 			sb.AppendLine();
 		}
 
@@ -297,13 +338,42 @@ namespace MessageAnalyzerToolkit.Executables
 			WriteETWActor(sb, provider, events);
 		}
 
+		private void WriteScenarios(StringBuilder sb, XElement provider, XElement localization)
+		{
+			Dictionary<Tuple<int, int, string>, XElement> events = new Dictionary<Tuple<int, int, string>, XElement>();
+			Dictionary<string, List<Tuple<string, string, string>>> templateData = new Dictionary<string, List<Tuple<string, string, string>>>();
+			foreach (var etwEvent in provider.Element(GetXName("events")).Elements(GetXName("event")))
+			{
+				events.Add(new Tuple<int, int, string>(int.Parse(etwEvent.Attribute("value").Value), int.Parse(etwEvent.Attribute("version").Value), etwEvent.Attribute("symbol").Value), etwEvent);
+			}
+
+			foreach (var template in provider.Element(GetXName("templates")).Elements(GetXName("template")))
+			{
+				List<Tuple<string, string, string>> datas = new List<Tuple<string, string, string>>();
+				templateData.Add(template.Attribute("tid").Value, datas);
+				foreach (var data in template.Elements(GetXName("data")))
+				{
+					datas.Add(new Tuple<string, string, string>(ConvertETWType(data.Attribute("inType").Value), ConvertToPascalCase(data.Attribute("name").Value), data.Attribute("map")?.Value));
+				}
+			}
+
+			//WriteEvent Messages
+			WriteScenarios(sb, provider, localization, events, templateData);
+
+			//WriteEndpoint
+			WriteScenarioEndPoints(sb, provider, events);
+
+			//WriteETWActor
+			WriteScenarioETWActor(sb, provider, events);
+		}
+
 		private void WriteETWActor(StringBuilder sb, XElement provider, Dictionary<Tuple<int, int, string>, XElement> events)
 		{
 			sb.AppendFormat("public autostart actor actor_{0}", provider.Attribute("guid").Value.Replace("-", "").TrimStart('{').TrimEnd('}'));
 			sb.AppendLine();
 			sb.AppendLine("\t(EtwEvent.Node node)");
 			sb.AppendLine("{");
-			sb.AppendLine("\tprocess node accepts m:EtwProviderMsg");
+			sb.AppendLine("\tprocess node accepts m:EtwProviderMsgEx");
 			sb.AppendFormat("\t\twhere (m.EventRecord.Header.ProviderId == {0} )", provider.Attribute("guid").Value);
 			sb.AppendLine();
 			sb.AppendLine("\t{");
@@ -320,23 +390,40 @@ namespace MessageAnalyzerToolkit.Executables
 				sb.AppendLine("\t\t\t\t{");
 				foreach (var etwEvent in etwEventGroup)
 				{
-					sb.AppendFormat("\t\t\t\t\t//{0} =>", GetEventName(etwEvent.Key));
+					sb.AppendFormat("\t\t\t\t\t//{0} =>", GetEventName(etwEvent.Key.Item3, etwEvent.Key.Item2));
 					sb.AppendLine();
 					sb.AppendFormat("\t\t\t\t\tcase $ {0} =>", etwEvent.Key.Item1);
 					sb.AppendLine();
 					sb.AppendLine("\t\t\t\t\t\tswitch(m.Payload)");
 					sb.AppendLine("\t\t\t\t\t\t{");
-					sb.AppendFormat("\t\t\t\t\t\t\tcase decodedMsg: {0} from BinaryDecoder <{0}> =>", GetEventName(etwEvent.Key));
+					sb.AppendFormat("\t\t\t\t\t\t\tcase decodedMsg: {0} from BinaryDecoder <{0}> =>", GetEventName(etwEvent.Key.Item3, etwEvent.Key.Item2));
 					sb.AppendLine();
 					sb.AppendLine("\t\t\t\t\t\t\t{");
 					sb.AppendLine("\t\t\t\t\t\t\t\tdecodedMsg.EtwKeywords = Keywords.Decode(m.EventRecord.Header.Descriptor.Keywords);");
 					sb.AppendLine("\t\t\t\t\t\t\t\tdecodedMsg.EventId = m.EventRecord.Header.Descriptor.Id;");
+					sb.AppendLine("\t\t\t\t\t\t\t\tdecodedMsg.ActivityId = m.EventRecord.Header.ActivityId;");
+					sb.AppendLine();
+
+					if (string.Equals(etwEvent.Value.Attribute("opcode")?.Value, "win:Start"))
+					{
+						sb.AppendLine("\t\t\t\t\t\t\t\tint count = m.ExtendedData.Count;");
+						sb.AppendLine("\t\t\t\t\t\t\t\tif (count > 0)");
+						sb.AppendLine("\t\t\t\t\t\t\t\t{");
+						sb.AppendLine("\t\t\t\t\t\t\t\t\tarray <EventHeaderExtendedDataItem> items = m.ExtendedData;");
+						sb.AppendLine("\t\t\t\t\t\t\t\t\tEVENT_HEADER_EXT_TYPE_RELATED_ACTIVITYID dataItem = items[0].DataItem as EVENT_HEADER_EXT_TYPE_RELATED_ACTIVITYID;");
+						sb.AppendLine();
+						sb.AppendLine("\t\t\t\t\t\t\t\t\tif (dataItem != null)");
+						sb.AppendLine("\t\t\t\t\t\t\t\t\t\tdecodedMsg.RelatedActivityId = dataItem.RelatedActivityId;");
+						sb.AppendLine("\t\t\t\t\t\t\t\t}");
+						sb.AppendLine();
+					}
+
 					sb.AppendFormat("\t\t\t\t\t\t\t\tep_{0} ep = endpoint ep_{0};", provider.Attribute("name").Value.Replace('-', '_'));
 					sb.AppendLine();
 					sb.AppendLine("\t\t\t\t\t\t\t\tdispatch ep accepts decodedMsg;");
 					sb.AppendLine("\t\t\t\t\t\t\t}");
 					sb.AppendLine("\t\t\t\t\t\t\tdefault =>");
-					sb.AppendFormat("\t\t\t\t\t\t\t\tThrowDecodingException(\"{0}\", \"{1}\");", provider.Attribute("name").Value, GetEventName(etwEvent.Key));
+					sb.AppendFormat("\t\t\t\t\t\t\t\tThrowDecodingException(\"{0}\", \"{1}\");", provider.Attribute("name").Value, GetEventName(etwEvent.Key.Item3, etwEvent.Key.Item2));
 					sb.AppendLine();
 					sb.AppendLine("\t\t\t\t\t\t}");
 					sb.AppendLine();
@@ -350,14 +437,50 @@ namespace MessageAnalyzerToolkit.Executables
 			sb.AppendLine();
 		}
 
-		private static string GetEventName(Tuple<int, int, string> etwEvent)
+		private void WriteScenarioETWActor(StringBuilder sb, XElement provider, Dictionary<Tuple<int, int, string>, XElement> events)
 		{
-			string eventName = etwEvent.Item3;
-			if (etwEvent.Item2 > 1)
+			int epCount = events.Count(e => string.Equals(e.Value.Attribute("opcode")?.Value, "win:Start") && (e.Key.Item3.EndsWith("Start")));
+
+			if (epCount > 0)
 			{
-				eventName = etwEvent.Item3 + "_V" + etwEvent.Item2;
+				sb.AppendFormat("public autostart actor actor_{0}_OP", provider.Attribute("name").Value.Replace("-", "_"));
+				sb.AppendFormat(" (ep_{0} node)", provider.Attribute("name").Value.Replace('-', '_'));
+				sb.AppendLine();
+				sb.AppendLine("{");
+				sb.AppendLine("\tobserve node accepts m:any message");
+				sb.AppendLine("\t{");
+
+				for (int i = 0; i < (epCount / 10) + 1; i++)
+				{
+					sb.AppendFormat("\t\tdispatch (endpoint ep_{0}_OP_{1}) issues m;", provider.Attribute("name").Value.Replace("-", "_"), i + 1);
+					sb.AppendLine();
+				}
+
+				sb.AppendLine();
+				sb.AppendLine("\t}");
+				sb.AppendLine("}");
+			}
+		}
+
+		private static string GetEventName(string name, int version)
+		{
+			string eventName = name;
+			if (version > 1)
+			{
+				eventName = name + "_V" + version;
 			}
 			return eventName;
+		}
+
+		private void WriteScenarios(StringBuilder sb, XElement provider, XElement localization, Dictionary<Tuple<int, int, string>, XElement> events, Dictionary<string, List<Tuple<string, string, string>>> templateData)
+		{
+			foreach (var etwEvent in events)
+			{
+				if (string.Equals(etwEvent.Value.Attribute("opcode")?.Value, "win:Start") && etwEvent.Key.Item3.EndsWith("Start"))
+				{
+					WriteCorrelationOperation(sb, localization, templateData, etwEvent);
+				}
+			}
 		}
 
 		private void WriteEvents(StringBuilder sb, XElement provider, XElement localization, Dictionary<Tuple<int, int, string>, XElement> events, Dictionary<string, List<Tuple<string, string, string>>> templateData)
@@ -365,82 +488,173 @@ namespace MessageAnalyzerToolkit.Executables
 			foreach (var etwEvent in events)
 			{
 				string template = "EventTemplate";
-				List<Tuple<string, string, string>> templateDatas = null;
-				XAttribute templateAttr = etwEvent.Value.Attribute("template");
-				if (templateAttr != null && !templateData.TryGetValue(templateAttr.Value, out templateDatas))
+				if (string.Equals(etwEvent.Value.Attribute("opcode")?.Value, "win:Start"))
 				{
-					throw new Exception("ETW template not found: " + templateAttr.Value);
+					template = "StartEventTemplate";
 				}
-
-				sb.AppendFormat("//Event {0}", etwEvent.Key);
-				sb.AppendLine();
-				sb.AppendFormat("message {0}: {1}", GetEventName(etwEvent.Key), template);
-				sb.AppendLine();
-				sb.AppendLine("{");
-
-				if (templateDatas != null)
 				{
-					foreach (var data in templateDatas)
+					List<Tuple<string, string, string>> templateDatas = null;
+					XAttribute templateAttr = etwEvent.Value.Attribute("template");
+					if (templateAttr != null && !templateData.TryGetValue(templateAttr.Value, out templateDatas))
 					{
-						if (!String.IsNullOrWhiteSpace(data.Item3))
-						{
-							sb.AppendFormat("\t{0} {1} with DisplayInfo{{ToText = {0}_ToText}};", data.Item3, data.Item2);
-						}
-						else
-						{
-							sb.AppendFormat("\t{0} {1};", data.Item1, data.Item2);
-						}
-						sb.AppendLine();
-						sb.AppendLine("");
+						throw new Exception("ETW template not found: " + templateAttr.Value);
 					}
-				}
 
-				sb.AppendLine("\tstring GetSummary()");
-				sb.AppendLine("\t{");
+					sb.AppendFormat("//Event {0}", etwEvent.Key);
+					sb.AppendLine();
+					sb.AppendFormat("message {0}: {1}", GetEventName(etwEvent.Key.Item3, etwEvent.Key.Item2), template);
+					sb.AppendLine();
+					sb.AppendLine("{");
 
-				string message = etwEvent.Value.Attribute("message")?.Value;
-				if (message != null)
-				{
-					message = message.Replace("$(string.", "").Replace(")", "");
-					string summary = FindLocalization(message, localization);
-					sb.AppendLine("\t\t// " + summary + ";");
-
-					MatchCollection matches = messageRegex.Matches(summary);
-					if ((templateDatas == null || templateDatas.Count == 0) && matches.Count > 0)
+					if (templateDatas != null)
 					{
-						throw new Exception("ETW template data items don't correspond to expected message parameters");
-					}
-					summary = "\"" + summary + "\"";
-
-					foreach (Match param in matches)
-					{
-						int paramNr = int.Parse(param.Groups["param"].Value);
-						var dataItem = templateDatas[paramNr - 1];
-						if (!string.IsNullOrWhiteSpace(dataItem.Item3))
+						foreach (var data in templateDatas)
 						{
-							summary = summary.Replace(param.Value, string.Format("\" + \n\t\t\t\t{1}_ToText(this.{0}) + \"", dataItem.Item2, dataItem.Item3));
-						}
-						else
-						{
-							summary = summary.Replace(param.Value, string.Format("\" + \n\t\t\t\t(this.{0} as string) + \"", dataItem.Item2));
+							if (!String.IsNullOrWhiteSpace(data.Item3))
+							{
+								sb.AppendFormat("\t{0} {1} with DisplayInfo{{ToText = {0}_ToText}};", data.Item3, data.Item2);
+							}
+							else
+							{
+								sb.AppendFormat("\t{0} {1};", data.Item1, data.Item2);
+							}
+							sb.AppendLine();
+							sb.AppendLine("");
 						}
 					}
-					summary = summary.Replace("\"\" +", "").Replace("+ \"\"", "").Trim();
-					sb.AppendLine("\t\treturn " + summary + ";");
+
+					sb.AppendLine("\tstring GetSummary()");
+					sb.AppendLine("\t{");
+
+					string message = etwEvent.Value.Attribute("message")?.Value;
+					if (message != null)
+					{
+						message = message.Replace("$(string.", "").Replace(")", "");
+						string summary = FindLocalization(message, localization);
+						sb.AppendLine("\t\t// " + summary + ";");
+
+						MatchCollection matches = messageRegex.Matches(summary);
+						if ((templateDatas == null || templateDatas.Count == 0) && matches.Count > 0)
+						{
+							throw new Exception("ETW template data items don't correspond to expected message parameters");
+						}
+						summary = "\"" + summary + "\"";
+
+						foreach (Match param in matches)
+						{
+							int paramNr = int.Parse(param.Groups["param"].Value);
+							var dataItem = templateDatas[paramNr - 1];
+							if (!string.IsNullOrWhiteSpace(dataItem.Item3))
+							{
+								summary = summary.Replace(param.Value, string.Format("\" + \n\t\t\t\t{1}_ToText(this.{0}) + \"", dataItem.Item2, dataItem.Item3));
+							}
+							else
+							{
+								summary = summary.Replace(param.Value, string.Format("\" + \n\t\t\t\t(this.{0} as string) + \"", dataItem.Item2));
+							}
+						}
+						summary = summary.Replace("\"\" +", "").Replace("+ \"\"", "").Trim();
+						sb.AppendLine("\t\treturn " + summary + ";");
+					}
+					else
+					{
+						sb.AppendLine("\t\treturn \"\";");
+					}
+					sb.AppendLine("\t}");
+					sb.AppendLine();
+					sb.AppendLine("\tpublic override string ToString()");
+					sb.AppendLine("\t{");
+					sb.AppendLine("\t\treturn GetSummary();");
+					sb.AppendLine("\t}");
+					sb.AppendLine("}");
+					sb.AppendLine();
 				}
-				else
-				{
-					sb.AppendLine("\t\treturn \"\";");
-				}
-				sb.AppendLine("\t}");
-				sb.AppendLine();
-				sb.AppendLine("\tpublic override string ToString()");
-				sb.AppendLine("\t{");
-				sb.AppendLine("\t\treturn GetSummary();");
-				sb.AppendLine("\t}");
-				sb.AppendLine("}");
-				sb.AppendLine();
 			}
+		}
+
+		private void WriteCorrelationOperation(StringBuilder sb, XElement localization, Dictionary<string, List<Tuple<string, string, string>>> templateData, KeyValuePair<Tuple<int, int, string>, XElement> etwEvent)
+		{
+			string opName = GetEventName(etwEvent.Key.Item3.Remove(etwEvent.Key.Item3.Length - 5), etwEvent.Key.Item2);
+			sb.AppendFormat("//Operation for start and stop events {0}", opName);
+			sb.AppendLine();
+			sb.AppendFormat("virtual operation {0}_OP", opName);
+			sb.AppendLine();
+			sb.AppendLine("{");
+
+			sb.AppendFormat("\tstring Name = \"{0}\";", opName);
+			sb.AppendLine();
+			sb.AppendLine();
+
+			List<Tuple<string, string, string>> templateDatas = null;
+			XAttribute templateAttr = etwEvent.Value.Attribute("template");
+			if (templateAttr != null && !templateData.TryGetValue(templateAttr.Value, out templateDatas))
+			{
+				throw new Exception("ETW template not found: " + templateAttr.Value);
+			}
+			StringBuilder arguments = new StringBuilder();
+			if (templateDatas != null)
+			{
+				int idx = 0;
+				foreach (var data in templateDatas)
+				{
+					sb.AppendFormat("\tany {0} = arg{1};", data.Item2, idx);
+					sb.AppendLine();
+					sb.AppendLine("");
+					arguments.AppendFormat(", {0} is var arg{1}", data.Item2, idx);
+					idx++;
+				}
+			}
+
+			sb.AppendLine("\toverride string ToString()");
+			sb.AppendLine("\t{");
+
+			string message = etwEvent.Value.Attribute("message")?.Value;
+			if (message != null)
+			{
+				message = message.Replace("$(string.", "").Replace(")", "");
+				string summary = FindLocalization(message, localization);
+				sb.AppendLine("\t\t// " + summary + ";");
+
+				MatchCollection matches = messageRegex.Matches(summary);
+				if ((templateDatas == null || templateDatas.Count == 0) && matches.Count > 0)
+				{
+					throw new Exception("ETW template data items don't correspond to expected message parameters");
+				}
+				summary = "\"" + summary + "\"";
+
+				foreach (Match param in matches)
+				{
+					int paramNr = int.Parse(param.Groups["param"].Value);
+					var dataItem = templateDatas[paramNr - 1];
+					if (!string.IsNullOrWhiteSpace(dataItem.Item3))
+					{
+						summary = summary.Replace(param.Value, string.Format("\" + \n\t\t\t\t{1}_ToText(this.{0}) + \"", dataItem.Item2, dataItem.Item3));
+					}
+					else
+					{
+						summary = summary.Replace(param.Value, string.Format("\" + \n\t\t\t\t(this.{0} as string) + \"", dataItem.Item2));
+					}
+				}
+				summary = summary.Replace("\"\" +", "").Replace("+ \"\"", "").Trim();
+				sb.AppendLine("\t\treturn " + summary + ";");
+			}
+			else
+			{
+				sb.AppendLine("\t\treturn \"\";");
+			}
+			sb.AppendLine("\t}");
+
+			sb.AppendLine("}");
+			sb.AppendFormat("= backtrack ({0})", GetEventName(etwEvent.Key.Item3, etwEvent.Key.Item2));
+			sb.AppendLine();
+			sb.AppendLine("(");
+			sb.AppendFormat("\t{0} {{ActivityId is var A_ActivityId {1}}} ->", GetEventName(etwEvent.Key.Item3, etwEvent.Key.Item2), arguments.ToString());
+			sb.AppendLine();
+			sb.AppendFormat("\t{0} {{ActivityId == A_ActivityId}}", GetEventName(etwEvent.Key.Item3.Remove(etwEvent.Key.Item3.Length - 5) + "Stop", etwEvent.Key.Item2));
+			sb.AppendLine();
+			sb.AppendLine(");");
+
+			sb.AppendLine();
 		}
 
 		private static void WriteTemplates(StringBuilder sb)
@@ -451,6 +665,15 @@ namespace MessageAnalyzerToolkit.Executables
 			sb.AppendLine("\tKeywords EtwKeywords with Standard.Encoding{Ignore = true};");
 			sb.AppendLine();
 			sb.AppendLine("\tint EventId with Standard.Encoding{Ignore = true};");
+			sb.AppendLine();
+			sb.AppendLine("\tguid ActivityId with Standard.Encoding{ Ignore = true};");
+			sb.AppendLine("}");
+			sb.AppendLine();
+
+			sb.AppendFormat("message {0}", "StartEventTemplate: EventTemplate");
+			sb.AppendLine();
+			sb.AppendLine("{");
+			sb.AppendLine("\tguid RelatedActivityId with Standard.Encoding{ Ignore = true};");
 			sb.AppendLine("}");
 			sb.AppendLine();
 		}
@@ -461,11 +684,48 @@ namespace MessageAnalyzerToolkit.Executables
 			sb.AppendLine();
 			foreach (var etwEvent in events)
 			{
-				sb.AppendFormat("\t\t\taccepts {0}", GetEventName(etwEvent.Key));
+				sb.AppendFormat("\t\t\taccepts {0}", GetEventName(etwEvent.Key.Item3, etwEvent.Key.Item2));
 				sb.AppendLine();
 			}
 			sb.AppendLine(";");
 			sb.AppendLine();
+		}
+
+		private static void WriteScenarioEndPoints(StringBuilder sb, XElement provider, Dictionary<Tuple<int, int, string>, XElement> events)
+		{
+			if (events.Any(e => string.Equals(e.Value.Attribute("opcode")?.Value, "win:Start") && (e.Key.Item3.EndsWith("Start"))))
+			{
+				int i = 0;
+				int j = 1;
+				foreach (var etwEvent in events)
+				{
+					if (string.Equals(etwEvent.Value.Attribute("opcode")?.Value, "win:Start") && (etwEvent.Key.Item3.EndsWith("Start")))
+					{
+						if (i % 10 == 0 && i > 0)
+						{
+							sb.AppendLine(";");
+							sb.AppendLine();
+						}
+
+						if (i % 10 == 0)
+						{
+							sb.AppendFormat("endpoint ep_{0}_OP_{1}", provider.Attribute("name").Value.Replace('-', '_'), j++);
+							sb.AppendLine();
+						}
+
+						sb.AppendFormat("\t\t\tissues \t{0}_OP", GetEventName(etwEvent.Key.Item3.Remove(etwEvent.Key.Item3.Length - 5), etwEvent.Key.Item2));
+						sb.AppendLine();
+
+						i++;
+					}
+				}
+
+				if (i > 0)
+				{
+					sb.AppendLine(";");
+					sb.AppendLine();
+				}
+			}
 		}
 
 		private string FindLocalization(string locValue, XElement localization)
@@ -509,6 +769,9 @@ namespace MessageAnalyzerToolkit.Executables
 
 				case "win:FILETIME":
 					return "DateTime";
+
+				case "win:Boolean":
+					return "bool";
 
 				default:
 					throw new Exception("Manifest contains unknown etw type: " + value);

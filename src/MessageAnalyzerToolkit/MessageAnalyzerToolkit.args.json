@@ -1,0 +1,24 @@
+{
+  "DataCollection": [
+    {
+      "Id": "810cdea7-5b77-4eec-b907-2e2fe9490177",
+      "Command": "CreateOPN -d \"d:\\Source\\Core\\MainDev\\Bin\\Debug\\\""
+    },
+    {
+      "Id": "3e984813-e49f-4a88-9de0-5479486c8cbf",
+      "Command": "ClearManifest -d \"d:\\Source\\Core\\MainDev\\Bin\\Debug\\\""
+    },
+    {
+      "Id": "d494a7c5-ab47-470c-a583-d3b9ae16c709",
+      "Command": "CreateOPN -f \"d:\\Source\\Core\\MainDev\\Bin\\Debug\\FactonStruktur.Facton-V6-Project.etwManifest.man\""
+    },
+    {
+      "Id": "575f6830-ffce-423e-babd-d3656c91b6fa",
+      "Command": "ClearManifest -d \"d:\\Source\\Core\\Release\\V8.0\\V8.0\\Bin\\Debug\\\""
+    },
+    {
+      "Id": "9e779e16-6508-4eec-9fe3-4f1ba8e77bc0",
+      "Command": "CreateOPN -d \"d:\\Source\\Core\\Release\\V8.0\\V8.0\\Bin\\Debug\\\""
+    }
+  ]
+}
