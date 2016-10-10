@@ -18,6 +18,8 @@ namespace MessageAnalyzerToolkit.Executables
 		private static readonly List<string> localizationOrder = new List<string>() { "en-US", "de-DE", "" };
 		private static readonly Regex messageRegex = new Regex(@"%(?<param>\d+)", RegexOptions.Singleline | RegexOptions.Compiled);
 
+		private const int maxEvents = 50;
+
 		public List<string> ManifestFiles { get; set; }
 
 		public string ManifestDirectory { get; set; }
@@ -241,6 +243,7 @@ namespace MessageAnalyzerToolkit.Executables
 			sb.AppendLine("using Utility;");
 			sb.AppendLine("using Standard;");
 			sb.AppendLine("using Diagnostics;");
+			sb.AppendLine("using Facton_ActivityTree_Utils;");
 			sb.AppendLine();
 		}
 
@@ -325,11 +328,16 @@ namespace MessageAnalyzerToolkit.Executables
 				}
 			}
 
+			//Write default Manifest Events
+			WriteManifestEvent(sb);
+
 			//WriteEvent Messages
 			WriteEvents(sb, provider, localization, events, templateData);
 
 			//Write Template Messages
 			WriteTemplates(sb);
+
+			events.Add(new Tuple<int, int, string>(65534, 1, "ManifestMessage"), null);
 
 			//WriteEndpoint
 			WriteEndPoint(sb, provider, events);
@@ -404,7 +412,7 @@ namespace MessageAnalyzerToolkit.Executables
 					sb.AppendLine("\t\t\t\t\t\t\t\tdecodedMsg.ActivityId = m.EventRecord.Header.ActivityId;");
 					sb.AppendLine();
 
-					if (string.Equals(etwEvent.Value.Attribute("opcode")?.Value, "win:Start"))
+					if (string.Equals(etwEvent.Value?.Attribute("opcode")?.Value, "win:Start"))
 					{
 						sb.AppendLine("\t\t\t\t\t\t\t\tint count = m.ExtendedData.Count;");
 						sb.AppendLine("\t\t\t\t\t\t\t\tif (count > 0)");
@@ -414,10 +422,18 @@ namespace MessageAnalyzerToolkit.Executables
 						sb.AppendLine();
 						sb.AppendLine("\t\t\t\t\t\t\t\t\tif (dataItem != null)");
 						sb.AppendLine("\t\t\t\t\t\t\t\t\t\tdecodedMsg.RelatedActivityId = dataItem.RelatedActivityId;");
+						sb.AppendLine();
+						sb.AppendLine("\t\t\t\t\t\t\t\t\tdecodedMsg.ActivityTree = Facton_ActivityTree_Utils.GetActivityTree(decodedMsg.ActivityId, decodedMsg.RelatedActivityId, m.EventRecord.Header.ProcessId, m.EventRecord.Header.ThreadId);");
 						sb.AppendLine("\t\t\t\t\t\t\t\t}");
 						sb.AppendLine();
 					}
-
+					else
+					{
+						if (etwEvent.Key.Item1 != 0 && etwEvent.Key.Item1 != 65534)
+						{
+							sb.AppendLine("\t\t\t\t\t\t\t\tdecodedMsg.ActivityTree = Facton_ActivityTree_Utils.GetActivityTree(decodedMsg.ActivityId, m.EventRecord.Header.ProcessId, m.EventRecord.Header.ThreadId);");
+						}
+					}
 					sb.AppendFormat("\t\t\t\t\t\t\t\tep_{0} ep = endpoint ep_{0};", provider.Attribute("name").Value.Replace('-', '_'));
 					sb.AppendLine();
 					sb.AppendLine("\t\t\t\t\t\t\t\tdispatch ep accepts decodedMsg;");
@@ -450,7 +466,7 @@ namespace MessageAnalyzerToolkit.Executables
 				sb.AppendLine("\tobserve node accepts m:any message");
 				sb.AppendLine("\t{");
 
-				for (int i = 0; i < (epCount / 10) + 1; i++)
+				for (int i = 0; i < (epCount / maxEvents) + 1; i++)
 				{
 					sb.AppendFormat("\t\tdispatch (endpoint ep_{0}_OP_{1}) issues m;", provider.Attribute("name").Value.Replace("-", "_"), i + 1);
 					sb.AppendLine();
@@ -476,7 +492,7 @@ namespace MessageAnalyzerToolkit.Executables
 		{
 			foreach (var etwEvent in events)
 			{
-				if (string.Equals(etwEvent.Value.Attribute("opcode")?.Value, "win:Start") && etwEvent.Key.Item3.EndsWith("Start"))
+				if (string.Equals(etwEvent.Value.Attribute("opcode")?.Value, "win:Start") && (etwEvent.Key.Item3.EndsWith("Start") || etwEvent.Key.Item3.StartsWith("CorrelationStartEvent")))
 				{
 					WriteCorrelationOperation(sb, localization, templateData, etwEvent);
 				}
@@ -572,9 +588,27 @@ namespace MessageAnalyzerToolkit.Executables
 			}
 		}
 
+		private void WriteManifestEvent(StringBuilder sb)
+		{
+			sb.AppendLine("//Event (65534, 0, ManifestMessage)");
+			sb.AppendLine("message ManifestMessage: EventTemplate");
+			sb.AppendLine("{");
+			sb.AppendLine("\tstring GetSummary()");
+			sb.AppendLine("\t{");
+			sb.AppendLine("\t\treturn \"ManifestMessage\";");
+			sb.AppendLine("\t}");
+			sb.AppendLine();
+			sb.AppendLine("\tpublic override string ToString()");
+			sb.AppendLine("\t{");
+			sb.AppendLine("\t\treturn GetSummary();");
+			sb.AppendLine("\t}");
+			sb.AppendLine("}");
+			sb.AppendLine();
+		}
+
 		private void WriteCorrelationOperation(StringBuilder sb, XElement localization, Dictionary<string, List<Tuple<string, string, string>>> templateData, KeyValuePair<Tuple<int, int, string>, XElement> etwEvent)
 		{
-			string opName = GetEventName(etwEvent.Key.Item3.Remove(etwEvent.Key.Item3.Length - 5), etwEvent.Key.Item2);
+			string opName = GetEventName(etwEvent.Key.Item3.Replace("Start", ""), etwEvent.Key.Item2);
 			sb.AppendFormat("//Operation for start and stop events {0}", opName);
 			sb.AppendLine();
 			sb.AppendFormat("virtual operation {0}_OP", opName);
@@ -584,6 +618,10 @@ namespace MessageAnalyzerToolkit.Executables
 			sb.AppendFormat("\tstring Name = \"{0}\";", opName);
 			sb.AppendLine();
 			sb.AppendLine();
+			sb.AppendLine("\tguid ActivityId = op_ActivityId;");
+			sb.AppendLine();
+			sb.AppendLine("\tguid RelatedActivityId = op_RelatedActivityId;");
+			sb.AppendLine();
 
 			List<Tuple<string, string, string>> templateDatas = null;
 			XAttribute templateAttr = etwEvent.Value.Attribute("template");
@@ -591,19 +629,26 @@ namespace MessageAnalyzerToolkit.Executables
 			{
 				throw new Exception("ETW template not found: " + templateAttr.Value);
 			}
-			StringBuilder arguments = new StringBuilder();
+
+			int idx = 0;
+			StringBuilder startArguments = new StringBuilder();
+			StringBuilder stopArguments = new StringBuilder();
 			if (templateDatas != null)
 			{
-				int idx = 0;
 				foreach (var data in templateDatas)
 				{
 					sb.AppendFormat("\tany {0} = arg{1};", data.Item2, idx);
 					sb.AppendLine();
 					sb.AppendLine("");
-					arguments.AppendFormat(", {0} is var arg{1}", data.Item2, idx);
+					startArguments.AppendFormat(", {0} is var arg{1}", data.Item2, idx);
 					idx++;
 				}
 			}
+
+			sb.AppendFormat("\tany {0} = arg{1};", "InternalTimeElapsed", idx);
+			sb.AppendLine();
+			sb.AppendLine("");
+			stopArguments.AppendFormat(", {0} is var arg{1}", "TimeElapsed", idx);
 
 			sb.AppendLine("\toverride string ToString()");
 			sb.AppendLine("\t{");
@@ -648,9 +693,9 @@ namespace MessageAnalyzerToolkit.Executables
 			sb.AppendFormat("= backtrack ({0})", GetEventName(etwEvent.Key.Item3, etwEvent.Key.Item2));
 			sb.AppendLine();
 			sb.AppendLine("(");
-			sb.AppendFormat("\t{0} {{ActivityId is var A_ActivityId {1}}} ->", GetEventName(etwEvent.Key.Item3, etwEvent.Key.Item2), arguments.ToString());
+			sb.AppendFormat("\t{0} {{ActivityId is var op_ActivityId, RelatedActivityId is var op_RelatedActivityId {1}}} ->", GetEventName(etwEvent.Key.Item3, etwEvent.Key.Item2), startArguments.ToString());
 			sb.AppendLine();
-			sb.AppendFormat("\t{0} {{ActivityId == A_ActivityId}}", GetEventName(etwEvent.Key.Item3.Remove(etwEvent.Key.Item3.Length - 5) + "Stop", etwEvent.Key.Item2));
+			sb.AppendFormat("\t{0} {{ActivityId == op_ActivityId {1}}}", GetEventName(etwEvent.Key.Item3.Replace("Start", "Stop"), etwEvent.Key.Item2), stopArguments.ToString());
 			sb.AppendLine();
 			sb.AppendLine(");");
 
@@ -667,6 +712,8 @@ namespace MessageAnalyzerToolkit.Executables
 			sb.AppendLine("\tint EventId with Standard.Encoding{Ignore = true};");
 			sb.AppendLine();
 			sb.AppendLine("\tguid ActivityId with Standard.Encoding{ Ignore = true};");
+			sb.AppendLine();
+			sb.AppendLine("\tstring ActivityTree with Standard.Encoding{ Ignore = true};");
 			sb.AppendLine("}");
 			sb.AppendLine();
 
@@ -693,27 +740,27 @@ namespace MessageAnalyzerToolkit.Executables
 
 		private static void WriteScenarioEndPoints(StringBuilder sb, XElement provider, Dictionary<Tuple<int, int, string>, XElement> events)
 		{
-			if (events.Any(e => string.Equals(e.Value.Attribute("opcode")?.Value, "win:Start") && (e.Key.Item3.EndsWith("Start"))))
+			if (events.Any(e => string.Equals(e.Value.Attribute("opcode")?.Value, "win:Start") && (e.Key.Item3.EndsWith("Start") || e.Key.Item3.StartsWith("CorrelationStartEvent"))))
 			{
 				int i = 0;
 				int j = 1;
 				foreach (var etwEvent in events)
 				{
-					if (string.Equals(etwEvent.Value.Attribute("opcode")?.Value, "win:Start") && (etwEvent.Key.Item3.EndsWith("Start")))
+					if (string.Equals(etwEvent.Value.Attribute("opcode")?.Value, "win:Start") && (etwEvent.Key.Item3.EndsWith("Start") || etwEvent.Key.Item3.StartsWith("CorrelationStartEvent")))
 					{
-						if (i % 10 == 0 && i > 0)
+						if (i % maxEvents == 0 && i > 0)
 						{
 							sb.AppendLine(";");
 							sb.AppendLine();
 						}
 
-						if (i % 10 == 0)
+						if (i % maxEvents == 0)
 						{
 							sb.AppendFormat("endpoint ep_{0}_OP_{1}", provider.Attribute("name").Value.Replace('-', '_'), j++);
 							sb.AppendLine();
 						}
 
-						sb.AppendFormat("\t\t\tissues \t{0}_OP", GetEventName(etwEvent.Key.Item3.Remove(etwEvent.Key.Item3.Length - 5), etwEvent.Key.Item2));
+						sb.AppendFormat("\t\t\tissues \t{0}_OP", GetEventName(etwEvent.Key.Item3.Replace("Start", ""), etwEvent.Key.Item2));
 						sb.AppendLine();
 
 						i++;
