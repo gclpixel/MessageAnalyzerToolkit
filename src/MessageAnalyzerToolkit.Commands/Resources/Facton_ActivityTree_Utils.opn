@@ -1,0 +1,17 @@
+﻿// Version 0.5
+module Facton_ActivityTree_Utils;
+
+using WindowsReference;
+using Utility;
+using Standard;
+using Diagnostics;
+
+string GetActivityTree(guid activityId, long processUd, long threadId)
+{
+	return "";
+}
+
+string GetActivityTree(guid activityId, guid relatedActivityId, long processUd, long threadId)
+{
+	return "";
+}

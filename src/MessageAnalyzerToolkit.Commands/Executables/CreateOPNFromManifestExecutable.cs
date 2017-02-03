@@ -40,7 +40,7 @@ namespace MessageAnalyzerToolkit.Executables
 				}
 
 				IEnumerable<string> list = null;
-				if (this.ManifestFiles != null && this.ManifestFiles.Count > 0)
+				if (this.ManifestFiles?.Count > 0)
 				{
 					list = this.ManifestFiles;
 				}
@@ -63,6 +63,8 @@ namespace MessageAnalyzerToolkit.Executables
 						list = list.Union(Directory.EnumerateFiles(this.ManifestDirectory, "*.etwManifest.man"));
 					}
 				}
+
+				ToolkitHelper.ReplaceETWProvider(analyzerPath, "Facton_ActivityTree_Utils", Commands.Resources.Common.Facton_ActivityTree_Utils);
 
 				foreach (var file in list)
 				{
@@ -508,83 +510,82 @@ namespace MessageAnalyzerToolkit.Executables
 				{
 					template = "StartEventTemplate";
 				}
+
+				List<Tuple<string, string, string>> templateDatas = null;
+				XAttribute templateAttr = etwEvent.Value.Attribute("template");
+				if (templateAttr != null && !templateData.TryGetValue(templateAttr.Value, out templateDatas))
 				{
-					List<Tuple<string, string, string>> templateDatas = null;
-					XAttribute templateAttr = etwEvent.Value.Attribute("template");
-					if (templateAttr != null && !templateData.TryGetValue(templateAttr.Value, out templateDatas))
-					{
-						throw new Exception("ETW template not found: " + templateAttr.Value);
-					}
-
-					sb.AppendFormat("//Event {0}", etwEvent.Key);
-					sb.AppendLine();
-					sb.AppendFormat("message {0}: {1}", GetEventName(etwEvent.Key.Item3, etwEvent.Key.Item2), template);
-					sb.AppendLine();
-					sb.AppendLine("{");
-
-					if (templateDatas != null)
-					{
-						foreach (var data in templateDatas)
-						{
-							if (!String.IsNullOrWhiteSpace(data.Item3))
-							{
-								sb.AppendFormat("\t{0} {1} with DisplayInfo{{ToText = {0}_ToText}};", data.Item3, data.Item2);
-							}
-							else
-							{
-								sb.AppendFormat("\t{0} {1};", data.Item1, data.Item2);
-							}
-							sb.AppendLine();
-							sb.AppendLine("");
-						}
-					}
-
-					sb.AppendLine("\tstring GetSummary()");
-					sb.AppendLine("\t{");
-
-					string message = etwEvent.Value.Attribute("message")?.Value;
-					if (message != null)
-					{
-						message = message.Replace("$(string.", "").Replace(")", "");
-						string summary = FindLocalization(message, localization);
-						sb.AppendLine("\t\t// " + summary + ";");
-
-						MatchCollection matches = messageRegex.Matches(summary);
-						if ((templateDatas == null || templateDatas.Count == 0) && matches.Count > 0)
-						{
-							throw new Exception("ETW template data items don't correspond to expected message parameters");
-						}
-						summary = "\"" + summary + "\"";
-
-						foreach (Match param in matches)
-						{
-							int paramNr = int.Parse(param.Groups["param"].Value);
-							var dataItem = templateDatas[paramNr - 1];
-							if (!string.IsNullOrWhiteSpace(dataItem.Item3))
-							{
-								summary = summary.Replace(param.Value, string.Format("\" + \n\t\t\t\t{1}_ToText(this.{0}) + \"", dataItem.Item2, dataItem.Item3));
-							}
-							else
-							{
-								summary = summary.Replace(param.Value, string.Format("\" + \n\t\t\t\t(this.{0} as string) + \"", dataItem.Item2));
-							}
-						}
-						summary = summary.Replace("\"\" +", "").Replace("+ \"\"", "").Trim();
-						sb.AppendLine("\t\treturn " + summary + ";");
-					}
-					else
-					{
-						sb.AppendLine("\t\treturn \"\";");
-					}
-					sb.AppendLine("\t}");
-					sb.AppendLine();
-					sb.AppendLine("\tpublic override string ToString()");
-					sb.AppendLine("\t{");
-					sb.AppendLine("\t\treturn GetSummary();");
-					sb.AppendLine("\t}");
-					sb.AppendLine("}");
-					sb.AppendLine();
+					throw new Exception("ETW template not found: " + templateAttr.Value);
 				}
+
+				sb.AppendFormat("//Event {0}", etwEvent.Key);
+				sb.AppendLine();
+				sb.AppendFormat("message {0}: {1}", GetEventName(etwEvent.Key.Item3, etwEvent.Key.Item2), template);
+				sb.AppendLine();
+				sb.AppendLine("{");
+
+				if (templateDatas != null)
+				{
+					foreach (var data in templateDatas)
+					{
+						if (!String.IsNullOrWhiteSpace(data.Item3))
+						{
+							sb.AppendFormat("\t{0} {1} with DisplayInfo{{ToText = {0}_ToText}};", data.Item3, data.Item2);
+						}
+						else
+						{
+							sb.AppendFormat("\t{0} {1};", data.Item1, data.Item2);
+						}
+						sb.AppendLine();
+						sb.AppendLine("");
+					}
+				}
+
+				sb.AppendLine("\tstring GetSummary()");
+				sb.AppendLine("\t{");
+
+				string message = etwEvent.Value.Attribute("message")?.Value;
+				if (message != null)
+				{
+					message = message.Replace("$(string.", "").Replace(")", "");
+					string summary = FindLocalization(message, localization);
+					sb.AppendLine("\t\t// " + summary + ";");
+
+					MatchCollection matches = messageRegex.Matches(summary);
+					if ((templateDatas == null || templateDatas.Count == 0) && matches.Count > 0)
+					{
+						throw new Exception("ETW template data items don't correspond to expected message parameters");
+					}
+					summary = "\"" + summary + "\"";
+
+					foreach (Match param in matches)
+					{
+						int paramNr = int.Parse(param.Groups["param"].Value);
+						var dataItem = templateDatas[paramNr - 1];
+						if (!string.IsNullOrWhiteSpace(dataItem.Item3))
+						{
+							summary = summary.Replace(param.Value, string.Format("\" + \n\t\t\t\t{1}_ToText(this.{0}) + \"", dataItem.Item2, dataItem.Item3));
+						}
+						else
+						{
+							summary = summary.Replace(param.Value, string.Format("\" + \n\t\t\t\t(this.{0} as string) + \"", dataItem.Item2));
+						}
+					}
+					summary = summary.Replace("\"\" +", "").Replace("+ \"\"", "").Trim();
+					sb.AppendLine("\t\treturn " + summary + ";");
+				}
+				else
+				{
+					sb.AppendLine("\t\treturn \"\";");
+				}
+				sb.AppendLine("\t}");
+				sb.AppendLine();
+				sb.AppendLine("\tpublic override string ToString()");
+				sb.AppendLine("\t{");
+				sb.AppendLine("\t\treturn GetSummary();");
+				sb.AppendLine("\t}");
+				sb.AppendLine("}");
+				sb.AppendLine();
 			}
 		}
 

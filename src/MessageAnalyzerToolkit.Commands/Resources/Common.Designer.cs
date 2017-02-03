@@ -133,6 +133,23 @@ namespace MessageAnalyzerToolkit.Commands.Resources {
         }
         
         /// <summary>
+        ///   Looks up a localized string similar to // Version 0.5
+        ///module Facton_ActivityTree_Utils;
+        ///
+        ///using WindowsReference;
+        ///using Utility;
+        ///using Standard;
+        ///using Diagnostics;
+        ///
+        ///.
+        /// </summary>
+        public static string Facton_ActivityTree_Utils {
+            get {
+                return ResourceManager.GetString("Facton_ActivityTree_Utils", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Looks up a localized string similar to File Already Exists: {0}.
         /// </summary>
         public static string Format_FileAlreadExists {
