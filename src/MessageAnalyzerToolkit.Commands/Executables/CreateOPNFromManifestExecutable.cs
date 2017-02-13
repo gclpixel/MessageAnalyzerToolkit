@@ -64,7 +64,8 @@ namespace MessageAnalyzerToolkit.Executables
 					}
 				}
 
-				ToolkitHelper.ReplaceETWProvider(analyzerPath, "Facton_ActivityTree_Utils", Commands.Resources.Common.Facton_ActivityTree_Utils);
+				ToolkitHelper.ReplaceETWProvider(analyzerPath, "Facton_ActivityTree_Utils", Common.Facton_ActivityTree_Utils);
+				ToolkitHelper.ReplaceETWProvider(analyzerPath, "Microsoft_AdoNet_SystemData", Common.Microsoft_AdoNet_SystemData);
 
 				foreach (var file in list)
 				{

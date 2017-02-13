@@ -133,15 +133,26 @@ namespace MessageAnalyzerToolkit.Commands.Resources {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to // Version 0.5
-        ///module Facton_ActivityTree_Utils;
+        ///   Looks up a localized string similar to //Version 1.0
+        ///protocol Facton_ActivityTree_Utils;
         ///
-        ///using WindowsReference;
-        ///using Utility;
-        ///using Standard;
-        ///using Diagnostics;
+        ///map&lt;guid , ActivityTreeNode&gt; ActivityIds = {};
+        ///map&lt;string , int&gt; ThreadIds = {};
         ///
-        ///.
+        ///type ActivityTreeNode
+        ///{
+        ///	public string NodeName;
+        ///	
+        ///	public int LastId;
+        ///}
+        ///
+        ///string GetActivityTree(guid activityId, uint processId, uint threadId)
+        ///{
+        ///	if(!(activityId in ActivityIds.Keys))
+        ///	{
+        ///		ActivityTreeNode node = new ActivityTreeNode();
+        ///		node.LastId = 1;
+        ///		node.NodeName = (processId as string) + &quot;/&quot; + (threadId as string) + &quot;/&quot; + (node.LastId as string) + [rest of string was truncated]&quot;;.
         /// </summary>
         public static string Facton_ActivityTree_Utils {
             get {
@@ -191,6 +202,36 @@ namespace MessageAnalyzerToolkit.Commands.Resources {
         public static string Format_ProviderNotFound {
             get {
                 return ResourceManager.GetString("Format_ProviderNotFound", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to protocol Microsoft_AdoNet_SystemData
+        ///	with ImportInfo{ProviderId = {6a4dfe53-eb50-5332-8473-7b7e10a94fd1},
+        ///					EventsCount = 2,
+        ///					KeywordsCount = 1};
+        ///using Etw;
+        ///using EtwEvent;
+        ///using WindowsReference;
+        ///using Utility;
+        ///using Standard;
+        ///using Diagnostics;
+        ///using Facton_ActivityTree_Utils;
+        ///
+        ///type Keywords
+        ///{
+        ///	WindowsEtwKeywords StandardKeywords;
+        ///
+        ///	bool SqlClient;
+        ///
+        ///	public static Keywords Decode(ulong keyword)
+        ///	{
+        ///		Keywords result = new Keywords();
+        ///		result.StandardKeywords = WindowsEtwKeywor [rest of string was truncated]&quot;;.
+        /// </summary>
+        public static string Microsoft_AdoNet_SystemData {
+            get {
+                return ResourceManager.GetString("Microsoft_AdoNet_SystemData", resourceCulture);
             }
         }
         

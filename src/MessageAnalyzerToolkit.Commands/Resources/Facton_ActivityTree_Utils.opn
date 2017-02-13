@@ -1,17 +1,79 @@
-﻿// Version 0.5
-module Facton_ActivityTree_Utils;
+﻿//Version 1.0
+protocol Facton_ActivityTree_Utils;
 
-using WindowsReference;
-using Utility;
-using Standard;
-using Diagnostics;
+map<guid , ActivityTreeNode> ActivityIds = {};
+map<string , int> ThreadIds = {};
 
-string GetActivityTree(guid activityId, long processUd, long threadId)
+type ActivityTreeNode
 {
-	return "";
+	public string NodeName;
+	
+	public int LastId;
 }
 
-string GetActivityTree(guid activityId, guid relatedActivityId, long processUd, long threadId)
+string GetActivityTree(guid activityId, uint processId, uint threadId)
 {
-	return "";
+	if(!(activityId in ActivityIds.Keys))
+	{
+		ActivityTreeNode node = new ActivityTreeNode();
+		node.LastId = 1;
+		node.NodeName = (processId as string) + "/" + (threadId as string) + "/" + (node.LastId as string) + "/";
+		
+		ActivityIds[activityId] = node;
+	}
+	
+	return ActivityIds[activityId].NodeName;
+}
+
+string GetActivityTree(guid activityId, guid relatedActivityId, uint processId, uint threadId)
+{
+	ActivityTreeNode parentNode;
+	string nodeName = "";
+	int lastId = 1;
+	
+	if(relatedActivityId in ActivityIds.Keys && relatedActivityId != {00000000-0000-0000-0000-000000000000})
+	{
+		parentNode = ActivityIds[relatedActivityId];
+		parentNode.LastId = parentNode.LastId + 1;
+	}
+	else
+	{
+		parentNode = new ActivityTreeNode();
+		parentNode.LastId = 1;
+		
+		int lastThread = 1;
+		string threadName = (processId as string) + "/" + (threadId as string);
+		
+		if(threadName in ThreadIds)
+		{
+			lastThread = ThreadIds[threadName] + 1;
+		}
+		
+		ThreadIds[threadName] = lastThread;
+		
+		parentNode.NodeName = threadName + "#" + (lastThread as string) + "/";
+		
+		ActivityIds[relatedActivityId] = parentNode;
+	}
+	
+	lastId = parentNode.LastId;
+	nodeName = parentNode.NodeName;
+	
+	if(!(activityId in ActivityIds.Keys))
+	{
+		ActivityTreeNode node = new ActivityTreeNode();
+		node.LastId = 1;
+		if(nodeName != "")
+		{
+			node.NodeName = nodeName + (lastId as string) + "/";
+		}
+		else
+		{
+			node.NodeName = (processId as string) + "/" + (threadId as string) + "/" + (node.LastId as string) + "/";
+		}
+		
+		ActivityIds[activityId] = node;
+	}
+	
+	return ActivityIds[activityId].NodeName;
 }

@@ -78,6 +78,7 @@
     <None Include="app.config" />
     <None Include="packages.config" />
     <EmbeddedResource Include="Resources\Facton_ActivityTree_Utils.opn" />
+    <EmbeddedResource Include="Resources\Microsoft-AdoNet-SystemData.opn" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 

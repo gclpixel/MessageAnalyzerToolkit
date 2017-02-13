@@ -1,0 +1,193 @@
+protocol Microsoft_AdoNet_SystemData
+	with ImportInfo{ProviderId = {6a4dfe53-eb50-5332-8473-7b7e10a94fd1},
+					EventsCount = 2,
+					KeywordsCount = 1};
+using Etw;
+using EtwEvent;
+using WindowsReference;
+using Utility;
+using Standard;
+using Diagnostics;
+using Facton_ActivityTree_Utils;
+
+type Keywords
+{
+	WindowsEtwKeywords StandardKeywords;
+
+	bool SqlClient;
+
+	public static Keywords Decode(ulong keyword)
+	{
+		Keywords result = new Keywords();
+		result.StandardKeywords = WindowsEtwKeywordsDecoder(keyword);
+		result.SqlClient = EtwKeywordDecoder(keyword, 0x0000000000000001);
+		return result;
+	}
+}
+
+//Operation for start and stop events SqlExecute_OP
+virtual operation SqlExecute_OP
+{
+	int ObjectId = arg0;
+
+	string DataSource = arg1;
+	
+	string DataBase = arg2;
+	
+	string CommandText = arg3;
+
+	guid ActivityId = arg4;
+	
+	override string ToString()
+	{
+		return "SqlExecute " + (this.ObjectId as string);
+	}
+}
+= (
+	BeginExecute {ObjectId is var A_ObjectId , ObjectId is var arg0, DataSource is var arg1, DataBase is var arg2, CommandText is var arg3, ActivityId is var arg4} ->
+	EndExecute {ObjectId == A_ObjectId}
+   );
+
+//Event (1, 1, BeginExecute)
+message BeginExecute: EventTemplate
+{
+	int ObjectId;
+
+	string DataSource;
+	
+	string DataBase;
+	
+	string CommandText;
+
+	string GetSummary()
+	{
+		return "BeginExecute " + (this.ObjectId as string)+ " " +(this.CommandText as string);
+	}
+
+	public override string ToString()
+	{
+		return GetSummary();
+	}
+}
+
+//Event (2, 1, EndExecute)
+message EndExecute: EventTemplate
+{
+	int ObjectId;
+
+	int CompositeState;
+	
+	int SqlExceptionNumber;
+
+	string GetSummary()
+	{
+		return "EndExecute " + (this.ObjectId as string);
+	}
+
+	public override string ToString()
+	{
+		return GetSummary();
+	}
+}
+
+//Event (65534, 0, ManifestMessage)
+message ManifestMessage: EventTemplate
+{
+	string GetSummary()
+	{
+		return "ManifestMessage";
+	}
+
+	public override string ToString()
+	{
+		return GetSummary();
+	}
+}
+
+message EventTemplate
+{
+	Keywords EtwKeywords with Standard.Encoding{Ignore = true};
+
+	int EventId with Standard.Encoding{Ignore = true};
+
+	guid ActivityId with Standard.Encoding{ Ignore = true};
+	
+	string ActivityTree with Standard.Encoding{ Ignore = true};
+}
+
+endpoint ep_Microsoft_AdoNet_SystemData
+			accepts BeginExecute
+			accepts EndExecute
+			accepts ManifestMessage
+			issues SqlExecute_OP
+;
+
+public autostart actor actor_6a4dfe53eb50533284737b7e10a94fd1
+	(EtwEvent.Node node)
+{
+	observe node accepts m:any message
+	{
+		dispatch (endpoint ep_Microsoft_AdoNet_SystemData) issues m;
+
+	}
+	
+	process node accepts m:EtwProviderMsgEx
+		where (m.EventRecord.Header.ProviderId == {6a4dfe53-eb50-5332-8473-7b7e10a94fd1} )
+	{
+		switch(m.EventRecord.Header.Descriptor.Id)
+			{
+				//BeginExecute =>
+				case $ 1 =>
+					switch(m.Payload)
+					{
+						case decodedMsg: BeginExecute from BinaryDecoder <BeginExecute> =>
+						{
+							decodedMsg.EtwKeywords = Keywords.Decode(m.EventRecord.Header.Descriptor.Keywords);
+							decodedMsg.EventId = m.EventRecord.Header.Descriptor.Id;
+							decodedMsg.ActivityId = m.EventRecord.Header.ActivityId;
+							
+							decodedMsg.ActivityTree = Facton_ActivityTree_Utils.GetActivityTree(decodedMsg.ActivityId, m.EventRecord.Header.ProcessId, m.EventRecord.Header.ThreadId);
+					
+							ep_Microsoft_AdoNet_SystemData ep = endpoint ep_Microsoft_AdoNet_SystemData;
+							dispatch ep accepts decodedMsg;
+						}
+						default =>
+							ThrowDecodingException("Microsoft-AdoNet-SystemData", "BeginExecute");
+					}
+					
+				//EndExecute =>
+				case $ 2 =>
+					switch(m.Payload)
+					{
+						case decodedMsg: EndExecute from BinaryDecoder <EndExecute> =>
+						{
+							decodedMsg.EtwKeywords = Keywords.Decode(m.EventRecord.Header.Descriptor.Keywords);
+							decodedMsg.EventId = m.EventRecord.Header.Descriptor.Id;
+							decodedMsg.ActivityId = m.EventRecord.Header.ActivityId;
+							
+							decodedMsg.ActivityTree = Facton_ActivityTree_Utils.GetActivityTree(decodedMsg.ActivityId, m.EventRecord.Header.ProcessId, m.EventRecord.Header.ThreadId);
+							
+							ep_Microsoft_AdoNet_SystemData ep = endpoint ep_Microsoft_AdoNet_SystemData;
+							dispatch ep accepts decodedMsg;
+						}
+						default =>
+							ThrowDecodingException("Microsoft-AdoNet-SystemData", "EndExecute");
+					}
+				case $65534=>
+				switch(m.Payload)
+					{
+						case decodedMsg: ManifestMessage from BinaryDecoder <ManifestMessage> =>
+						{
+							decodedMsg.EtwKeywords = Keywords.Decode(m.EventRecord.Header.Descriptor.Keywords);
+							decodedMsg.EventId = m.EventRecord.Header.Descriptor.Id;
+							decodedMsg.ActivityId = m.EventRecord.Header.ActivityId;
+							ep_Microsoft_AdoNet_SystemData ep = endpoint ep_Microsoft_AdoNet_SystemData;
+							dispatch ep accepts decodedMsg;
+						}
+						default =>
+							ThrowDecodingException("Microsoft-AdoNet-SystemData", "ManifestMessage");
+					}
+		}
+	}
+}
+
