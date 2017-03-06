@@ -535,7 +535,14 @@ namespace MessageAnalyzerToolkit.Executables
 						}
 						else
 						{
-							sb.AppendFormat("\t{0} {1};", data.Item1, data.Item2);
+							if (data.Item1 == "bool")
+							{
+								sb.AppendFormat("\t{0} {1} with Standard.BinaryEncoding{{Width = 32}};", data.Item1, data.Item2);
+							}
+							else
+							{
+								sb.AppendFormat("\t{0} {1};", data.Item1, data.Item2);
+							}
 						}
 						sb.AppendLine();
 						sb.AppendLine("");
